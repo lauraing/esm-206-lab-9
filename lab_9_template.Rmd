@@ -31,7 +31,8 @@ Use this template to follow along in Lab Week 9. Each code chunk you'll need is 
 
 # a. Load packages 'tidyverse' and 'stargazer':
 
-
+library(tidyverse)
+library(stargazer)
 
 ```
 
@@ -41,10 +42,15 @@ Use this template to follow along in Lab Week 9. Each code chunk you'll need is 
 
 # a. Read in data as 'homes':
 
+homes <- read_csv("slo_homes.csv")
 
 # b. Filter to only include cities "San Luis Obispo", "Santa Maria-Orcutt", "Atascadero", and "Arroyo Grande", and call this new subset 'homes_sub':
 
+# filter is rows
+# select is columns
 
+homes_sub <- homes %>% 
+  filter(City == "Arroyo Grande" | City == "San Luis Obispo" | City == "Atascadero" | City == "Santa Maria-Orcutt")
 
 ```
 
@@ -87,6 +93,7 @@ by_sqft <- ggplot(homes_sub, aes(x = SqFt, y = Price)) +
 by_sqft
 
 # Observations here: Does relationship appear ~ linear? Anything else we can pick out re: trends, outliers, etc.? What is the general trend? Any outliers? Is there reason enough for us to omit it?
+# Yes, relationship appears linear for all three types. 
 
 ```
 
@@ -106,9 +113,14 @@ Use summary() to view the model output and statistics.
 ```{r saturated}
 
 # a. Saturated model: 
+homes_lm1 <- lm(Price ~ City + Bedrooms + Bathrooms + SqFt + PricePerSqFt + Status, data = homes_sub) # dependent variable is always on left side of equation
 
+# Note: THIS IS BAD (because PricePerSqFt is calculated from the dependent variable Price --- biased overfitting of model results). It makes no sense to include a variable that is calculated from your output in order to predict the output variable.
+# this is telling me that a house sold at regular sale status is gonna sell for less than the same house if its foreclosed on (not true). This also tels me that as you increase the house by 1 bedroom, the price goes down by $31,000 (not true).
+# bedrooms, bathrooms, and sqft are all saying the same thing; how big the house is. Best to leave in your model is SqFt.
 
 # b. Model summary:
+summary(homes_lm1)
 
 ```
 
@@ -117,8 +129,14 @@ The next model: Exclude price per square foot, and bedrooms/bathrooms (since the
 ```{r subset}
 
 # a. Updated model with variables City, SqFt, and Status:
+homes_lm2 <- lm(Price ~ City + SqFt + Status, data = homes_sub)
+homes_lm2
+# slope shows how much outcome variable will change if everything else stays the same. We expect house in SLO to sell for $34,525 more on average than a house in Arroyo Grande (reference level). I would expect a house in Atascadero on average to sell for $20,2157 less than a house in Arroyo Grande. StatusRegular = if you take two houses that are exactly the same, a house that sells in regular status, we expect it to sell on average $209,999 more than a house in foreclosure (reference level).
 
 # b. Model summary:
+summary(homes_lm2)
+# short sale is not much different from foreclosure.
+# p-value tells us that this model significantly predicts housing outcomes.
 
 ```
 
@@ -127,20 +145,22 @@ Wait...but what if I wanted everything to be with respect to a Regular sale stat
 ```{r fct_relevel}
 
 # a. Set Status to class 'factor'
-
+homes_sub$Status <- factor(homes_sub$Status) # now in R's brain, it's a factor instead of a character.
 
 # b. Check to ensure it's a factor now
-
+# Use class() to check!
 
 # c. Check levels:
-
+levels(homes_sub$Status)
+# the first one is always the reference level (Foreclosure)
 
 # d. Reassign reference level of "Status" to "Regular":
-
+homes_sub$Status <- fct_relevel(homes_sub$Status, "Regular")
 
 # e. Now run the regression again - same equation, but now the reference level is different (Status = Regular): 
+homes_lm3 <- lm(Price ~ City + SqFt + Status, data = homes_sub)
 
-
+summary(homes_lm3)
 
 ```
 
@@ -156,6 +176,12 @@ Then we can evaluate model diagnostics using the plot() function:
 ```{r diagnostics}
 
 # a. Model diagnostics:
+plot(homes_lm3)
+
+# Residuals vs Fitted: vertical scatter isn't increasing much as price increases. Best house to buy would be the 188 (way below the price the model predicts).
+# Normal Q-Q: don't be thrown off by a few outliers. Overall, data is normally distributed.
+
+# Overall, heteroscedasticity is OK, residuals normality definitely looks good, and conceptually and mathematically my model is making sense!
 
 ```
 
@@ -166,8 +192,12 @@ The AIC is a quantitative metric for model "optimization" that balances complexi
 ```{r AIC}
 
 # a. AIC values for each model
+sat_aic <- AIC(homes_lm1)
+final_aic <- AIC(homes_lm3)
+# you should never select a final model based strictly on the AIC
 
 # Answer: which would you pick? 
+# I would still pick homes_lm3, because: # Overall, heteroscedasticity is OK, residuals normality definitely looks good, and conceptually and mathematically my model is making sense!
 
 ```
 
@@ -177,7 +207,9 @@ The AIC is a quantitative metric for model "optimization" that balances complexi
 
 # a. Prepare a nice regression table:
 
+lm_table <- stargazer(homes_lm1, homes_lm3, type = "html")
 
+lm_table
 
 # Note: If you want to work with this in Word, save to html, open, copy and paste into Word. 
 
@@ -228,9 +260,13 @@ Make predictions for the new data using predict():
 ```{r predict}
 
 # a. Make predictions using the new data frame:
+price_predict <- predict(homes_lm3, 
+                         newdata = df_new, 
+                         se.fit = TRUE, # what the error is associated with it
+                         interval = "confidence") # what the confidence interval is around that mean value
 
 # b. Bind predictions to the data to make it actually useful:
-
+predict_df <- data.frame(df_new, price_predict) # data.frame lumps two columns together as long as they have the same # of rows
 
 
 ```
@@ -240,7 +276,11 @@ Then visualize it!
 ```{r graph, echo = FALSE}
 
 # Create a line graph with square footage on the x-axis, predicted price on y-axis, with color dependent on City and facet_wrapped by sale status (follow along):
+predict_graph <- ggplot(predict_df, aes(x = SqFt, y = fit.fit)) +
+  geom_line(aes(color = City)) +
+  facet_wrap(~Status) # can use faceting to show more than two variables in a way that is more digestible to an audience
 
+predict_graph
 
 ```
 
